@@ -7,7 +7,7 @@ ARG VERSION
 ARG BRANCH=develop
 ARG BUILD_CONFIGURATION=Release
 
-# Install build and runtime dependencies
+# Build dependencies
 RUN apk add --no-cache \
     bash \
     git \
@@ -18,38 +18,30 @@ RUN apk add --no-cache \
 
 WORKDIR /src
 
-# Copy source code
 COPY . .
 
-# Update version information
+# Update version info if VERSION is set
 RUN if [ -n "$VERSION" ]; then \
         sed -i "s/<AssemblyVersion>[0-9.*]\+<\/AssemblyVersion>/<AssemblyVersion>$VERSION<\/AssemblyVersion>/g" src/Directory.Build.props && \
         sed -i "s/<AssemblyConfiguration>[\$()A-Za-z-]\+<\/AssemblyConfiguration>/<AssemblyConfiguration>${BRANCH}<\/AssemblyConfiguration>/g" src/Directory.Build.props && \
         sed -i "s/<string>10.0.0.0<\/string>/<string>$VERSION<\/string>/g" distribution/osx/Readarr.app/Contents/Info.plist; \
     fi
 
-# Build everything (backend, frontend, packages)
 RUN chmod +x build.sh && ./build.sh --all
 
-# Stage 2: Final Runtime Image
-FROM docker.io/library/alpine:3.22
+# Stage 2: Runtime
+FROM alpine:3.22
 
 ARG TARGETARCH
-ARG VENDOR
 ARG VERSION
 ARG BRANCH=develop
-ARG PackageOwner=faustvii
-ARG PackageRepo=readarr
+ARG PackageOwner=IxeF
+ARG PackageRepo=Readarr
 
-# Add PUID/PGID defaults
 ENV COMPlus_EnableDiagnostics=0 \
     READARR__UPDATE__BRANCH=${BRANCH} \
     PUID=1000 \
-    PGID=1000 \
-    UMASK_SET=022
-
-USER root
-WORKDIR /app
+    PGID=1000
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -64,26 +56,25 @@ RUN apk add --no-cache \
         tzdata \
     && mkdir -p /app/bin /config /AudioBooks
 
-# Copy the packaged application from the builder stage
+# Copy built Readarr from builder stage
 COPY --from=builder /src/_artifacts/linux-musl-x64/net6.0/Readarr /app/bin/
 
 # Remove updater if not needed
 RUN rm -rf /app/bin/Readarr.Update
 
+# Set ownership and permissions
+RUN addgroup -g ${PGID} appgroup && \
+    adduser -D -u ${PUID} -G appgroup appuser && \
+    chown -R appuser:appgroup /app /config /AudioBooks && \
+    chmod -R 775 /app /config /AudioBooks
+
 # Create package_info dynamically
 RUN printf "UpdateMethod=docker\nBranch=%s\nPackageVersion=%s\nPackageAuthor=[%s](https://github.com/%s)\nPackageOwner=%s\nPackageRepo=%s\n" \
-    "${READARR__UPDATE__BRANCH}" "${VERSION}" "${VENDOR}" "${VENDOR}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
-
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# ✅ Create a user based on PUID/PGID and switch
-RUN addgroup -g ${PGID} appgroup && \
-    adduser -D -u ${PUID} -G appgroup appuser
+    "${READARR__UPDATE__BRANCH}" "${VERSION}" "${PackageOwner}" "${PackageOwner}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
 
 USER appuser:appgroup
 WORKDIR /config
 VOLUME ["/config", "/AudioBooks"]
 
-ENTRYPOINT ["/usr/bin/catatonit", "--", "/entrypoint.sh"]
+# Run Readarr directly
+ENTRYPOINT ["/app/bin/Readarr"]
