@@ -2,7 +2,7 @@ name: Build and Push Readarr
 
 on:
   push:
-    branches: [ "main" ]  # default branch of your fork
+    branches: [ "develop" ]  # or the default branch of your fork
 
 jobs:
   build:
@@ -24,7 +24,4 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: yourdockerhubusername/readarr:latest
-        build-args: |
-          VERSION=0.1.0
-          BRANCH=develop
+        tags: f3xi/readarr:latest
