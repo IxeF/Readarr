@@ -41,8 +41,12 @@ ARG BRANCH=develop
 ARG PackageOwner=faustvii
 ARG PackageRepo=readarr
 
+# Add PUID/PGID defaults
 ENV COMPlus_EnableDiagnostics=0 \
-    READARR__UPDATE__BRANCH=${BRANCH}
+    READARR__UPDATE__BRANCH=${BRANCH} \
+    PUID=1000 \
+    PGID=1000 \
+    UMASK_SET=022
 
 USER root
 WORKDIR /app
@@ -58,8 +62,7 @@ RUN apk add --no-cache \
         nano \
         sqlite-libs \
         tzdata \
-    && mkdir -p /app/bin \
-    && chown -R root:root /app && chmod -R 755 /app
+    && mkdir -p /app/bin /config /AudioBooks
 
 # Copy the packaged application from the builder stage
 COPY --from=builder /src/_artifacts/linux-musl-x64/net6.0/Readarr /app/bin/
@@ -68,14 +71,19 @@ COPY --from=builder /src/_artifacts/linux-musl-x64/net6.0/Readarr /app/bin/
 RUN rm -rf /app/bin/Readarr.Update
 
 # Create package_info dynamically
-RUN printf "UpdateMethod=docker\nBranch=%s\nPackageVersion=%s\nPackageAuthor=[%s](https://github.com/%s)\nPackageOwner=%s\nPackageRepo=%s\n" "${READARR__UPDATE__BRANCH}" "${VERSION}" "${VENDOR}" "${VENDOR}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
+RUN printf "UpdateMethod=docker\nBranch=%s\nPackageVersion=%s\nPackageAuthor=[%s](https://github.com/%s)\nPackageOwner=%s\nPackageRepo=%s\n" \
+    "${READARR__UPDATE__BRANCH}" "${VERSION}" "${VENDOR}" "${VENDOR}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER nobody:nogroup
+# ✅ Create a user based on PUID/PGID and switch
+RUN addgroup -g ${PGID} appgroup && \
+    adduser -D -u ${PUID} -G appgroup appuser
+
+USER appuser:appgroup
 WORKDIR /config
-VOLUME ["/config"]
+VOLUME ["/config", "/AudioBooks"]
 
 ENTRYPOINT ["/usr/bin/catatonit", "--", "/entrypoint.sh"]
