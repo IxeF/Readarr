@@ -88,4 +88,4 @@ WORKDIR /config
 VOLUME ["/config", "/AudioBooks"]
 
 # Run Readarr directly
-ENTRYPOINT ["/app/bin/Readarr/Readarr"]
+ENTRYPOINT ["dotnet", "/app/bin/Readarr/Readarr.dll"]
