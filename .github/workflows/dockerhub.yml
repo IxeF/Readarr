@@ -24,4 +24,4 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: f3xi/readarr:newest
+        tags: f3xi/readarr:2.0
