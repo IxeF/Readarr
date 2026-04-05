@@ -1,91 +1,87 @@
-# syntax=docker/dockerfile:1
-
-# Stage 1: Builder
 FROM mcr.microsoft.com/dotnet/sdk:6.0-alpine AS builder
-
+ 
 ARG VERSION
 ARG BRANCH=develop
 ARG BUILD_CONFIGURATION=Release
-
-# Build dependencies (ALL original)
+ 
+# install build and runtime dependencies
 RUN apk add --no-cache \
     bash \
     git \
     icu-libs \
     nodejs \
     yarn \
-    coreutils \
-    curl \
-    unzip \
-    jq
-
+    coreutils
+ 
 WORKDIR /src
-
+ 
+# copy source code
 COPY . .
-
-# Update version info if VERSION is set
+ 
+# update version information
 RUN if [ -n "$VERSION" ]; then \
         sed -i "s/<AssemblyVersion>[0-9.*]\+<\/AssemblyVersion>/<AssemblyVersion>$VERSION<\/AssemblyVersion>/g" src/Directory.Build.props && \
         sed -i "s/<AssemblyConfiguration>[\$()A-Za-z-]\+<\/AssemblyConfiguration>/<AssemblyConfiguration>${BRANCH}<\/AssemblyConfiguration>/g" src/Directory.Build.props && \
         sed -i "s/<string>10.0.0.0<\/string>/<string>$VERSION<\/string>/g" distribution/osx/Readarr.app/Contents/Info.plist; \
     fi
-
+ 
+# build everything (backend, frontend, packages)
 RUN chmod +x build.sh && ./build.sh --all
-
-# Stage 2: Runtime
-FROM alpine:3.22
-
+ 
+# stage 2: final runtime image
+FROM docker.io/library/alpine:3.22
+ 
+ARG TARGETARCH
+ARG VENDOR
 ARG VERSION
 ARG BRANCH=develop
-ARG PackageOwner=IxeF
-ARG PackageRepo=Readarr
+ARG PackageOwner=faustvii
+ARG PackageRepo=readarr
+# fix: declare PUID/PGID so they resolve at build time
 ARG PUID=1000
 ARG PGID=1000
-
+ 
 ENV COMPlus_EnableDiagnostics=0 \
-    READARR__UPDATE__BRANCH=${BRANCH} \
-    PUID=${PUID} \
-    PGID=${PGID} \
-    UMASK_SET=002
-
-# Runtime dependencies (ALL original plus extras if needed)
+    READARR__UPDATE__BRANCH=${BRANCH}
+ 
+USER root
+WORKDIR /app
+ 
+# install runtime dependencies and create required directories
 RUN apk add --no-cache \
-    bash \
-    ca-certificates \
-    catatonit \
-    coreutils \
-    icu-libs \
-    libintl \
-    nano \
-    sqlite-libs \
-    tzdata \
-    curl \
-    unzip \
-    jq
-
-# Directories
-RUN mkdir -p /app/bin /config /AudioBooks
-
-# Copy built app
+        bash \
+        ca-certificates \
+        catatonit \
+        coreutils \
+        icu-libs \
+        libintl \
+        nano \
+        sqlite-libs \
+        tzdata \
+    && mkdir -p /app/bin /config /AudioBooks \
+    && chown -R root:root /app && chmod -R 755 /app
+ 
+# copy the packaged application from the builder stage
 COPY --from=builder /src/_artifacts/linux-musl-x64/net6.0/Readarr /app/bin/
-
-# Remove updater
+ 
+# remove updater if not needed
 RUN rm -rf /app/bin/Readarr.Update
-
-# Create user and fix ownership/permissions
+ 
+# create user and fix ownership/permissions
 RUN addgroup -g ${PGID} appgroup && \
     adduser -D -u ${PUID} -G appgroup appuser && \
     chown -R appuser:appgroup /app /config /AudioBooks && \
     chmod -R 775 /app /config /AudioBooks
-
-# Create package info
-RUN printf "UpdateMethod=docker\nBranch=%s\nPackageVersion=%s\nPackageAuthor=[%s](https://github.com/%s)\nPackageOwner=%s\nPackageRepo=%s\n" \
-    "${READARR__UPDATE__BRANCH}" "${VERSION}" "${PackageOwner}" "${PackageOwner}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
-
-# Switch to non-root
+ 
+# create package_info dynamically
+RUN printf "UpdateMethod=docker\nBranch=%s\nPackageVersion=%s\nPackageAuthor=[%s](https://github.com/%s)\nPackageOwner=%s\nPackageRepo=%s\n" "${READARR__UPDATE__BRANCH}" "${VERSION}" "${VENDOR}" "${VENDOR}" "${PackageOwner}" "${PackageRepo}" > /app/package_info
+ 
+# copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ 
 USER appuser:appgroup
 WORKDIR /config
-VOLUME ["/config", "/AudioBooks"]
-
-# Run Readarr directly
-ENTRYPOINT ["dotnet", "/app/bin/Readarr/Readarr.dll"]
+VOLUME ["/config"]
+ 
+ENTRYPOINT ["/usr/bin/catatonit", "--", "/entrypoint.sh"]
