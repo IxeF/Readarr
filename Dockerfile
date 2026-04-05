@@ -45,7 +45,7 @@ ARG PackageRepo=readarr
 
 # allow user/group override
 ARG PUID=1000
-ARG PGID=1000
+ARG PGID=10
  
 ENV COMPlus_EnableDiagnostics=0 \
     READARR__UPDATE__BRANCH=${BRANCH}
