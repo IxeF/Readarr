@@ -88,4 +88,4 @@ WORKDIR /config
 VOLUME ["/config", "/AudioBooks"]
 
 # Run Readarr directly
-ENTRYPOINT ["/usr/bin/catatonit", "--", "/app/bin/Readarr/Readarr"]
+ENTRYPOINT ["/app/bin/Readarr/Readarr"]
